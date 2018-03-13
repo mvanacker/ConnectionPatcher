@@ -28,12 +28,15 @@ namespace ConnectionPatcher
             {
                 attempts++;
                 reconnected = TryReconnectWifi();
-                Thread.Sleep(tick);
+                if (!reconnected)
+                {
+                    Thread.Sleep(tick);
+                }
             }
             while (!reconnected);
             DateTime end = DateTime.Now;
             double delta = (end - start).TotalMilliseconds;
-            Console.WriteLine("Succesfully reconnected. ({0} reconnection attempts in {1} ms)", attempts, delta);
+            Console.WriteLine("Succesfully (re-)connected. ({0} reconnection attempt(s) in {1} ms)", attempts, delta);
         }
         private bool TryReconnectWifi()
         {

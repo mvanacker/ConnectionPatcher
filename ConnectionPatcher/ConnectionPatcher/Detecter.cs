@@ -25,7 +25,7 @@ namespace ConnectionPatcher
             return ipconfig.StandardOutput.ReadToEnd()
                 .Split(new[] { "\n" }, StringSplitOptions.None);
         }
-        private static int GetWirelessLanAdapterFirstLineNumber(string[] ipconfig)
+        private static int GetWirelessAdapterFirstLineNumber(string[] ipconfig)
         {
             for (int i = ipconfig.Length - 1; i >= 0; i--)
             {
@@ -34,13 +34,24 @@ namespace ConnectionPatcher
                     return i;
                 }
             }
-            throw new Exception("No wireless LAN adapter detected.");
+            throw new NoWirelessAdapterException();
         }
-        public static string GetWirelessLanAdapterName()
+        public static string GetWirelessAdapterName()
         {
             string[] ipconfig = GetIpConfig();
-            int i = GetWirelessLanAdapterFirstLineNumber(ipconfig);
-            return ipconfig[i + 3].Split(':')[1].Trim();
+            int i = GetWirelessAdapterFirstLineNumber(ipconfig);
+            for (; i < ipconfig.Length; i++)
+            {
+                if (ipconfig[i].Trim().StartsWith("Description"))
+                {
+                    break;
+                }
+            }
+            if (i == ipconfig.Length)
+            {
+                throw new NoWirelessAdapterException();
+            }
+            return ipconfig[i].Split(':')[1].Trim();
         }
     }
 }

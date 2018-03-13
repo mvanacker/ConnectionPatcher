@@ -23,26 +23,29 @@ namespace ConnectionPatcher
             ACCEPTABLE_LATENCY_MS = int.Parse(ConfigurationManager.AppSettings["AcceptableLatencyMs"]),
             RECONNECTION_ATTEMPTS_PER_SECOND = int.Parse(ConfigurationManager.AppSettings["ReconnectionAttemptsPerSecond"]);
 
-        private Wifi Wifi { get; }
-        private NetworkAdapter Adapter { get; }
-        private Process Ping { get; }
-
         public static void Main(string[] args)
         {
             new Program().Start();
         }
 
+        private Wifi Wifi { get; }
+        private NetworkAdapter Adapter { get; }
+        private Process Ping { get; }
+        private int Resets { get; set; }
+
         public Program()
         {
             // wrap wifi connection
             Wifi = new Wifi(SSID);
+            Wifi.PersistentlyTryReconnectWifi(RECONNECTION_ATTEMPTS_PER_SECOND);
             // wrap network adapter
-            string query = string.Format(QUERY, Detecter.GetWirelessLanAdapterName());
+            string query = string.Format(QUERY, Detecter.GetWirelessAdapterName());
             var result = new ManagementObjectSearcher(query).Get();
             foreach (ManagementObject obj in result) // by lack of .first() method
             {
                 Adapter = new NetworkAdapter(obj);
             }
+            Console.WriteLine("Adapter set to {0}.", Adapter.Name);
             // wrap ping process
             object[] args = { DEFAULT_GATEWAY, PACKETS_PER_TEST, TIMEOUT_WAIT_MS };
             Ping = new Process
@@ -61,22 +64,32 @@ namespace ConnectionPatcher
         {
             while (true)
             {
-                Cause cause = TestConnection();
-                switch (cause)
+                try
                 {
-                    case Cause.NONE:
-                        Console.WriteLine("Test results within acceptable range.");
-                        break;
-                    case Cause.PACKET_LOSS:
-                        Console.WriteLine("Timeout percentage below acceptable range.");
-                        break;
-                    case Cause.HIGH_LATENCY:
-                        Console.WriteLine("Latency above acceptable range.");
-                        break;
+                    Cause cause = TestConnection();
+                    switch (cause)
+                    {
+                        case Cause.NONE:
+                            Console.WriteLine("Test results within acceptable range.");
+                            break;
+                        case Cause.PACKET_LOSS:
+                            Console.WriteLine("Timeout percentage below acceptable range.");
+                            break;
+                        case Cause.HIGH_LATENCY:
+                            Console.WriteLine("Latency above acceptable range.");
+                            break;
+                    }
+                    if (cause != Cause.NONE)
+                    {
+                        ResetConnection();
+                    }
                 }
-                if (cause != Cause.NONE)
+                catch (Exception e)
                 {
-                    ResetConnection();
+                    Console.WriteLine(e.Message);
+                    Console.WriteLine(e.StackTrace);
+                    Console.WriteLine("Press any key to close.");
+                    Console.ReadKey();
                 }
             }
         }
@@ -86,10 +99,11 @@ namespace ConnectionPatcher
             Ping.Start();
             while (!Ping.StandardOutput.EndOfStream)
             {
-                string line = Ping.StandardOutput.ReadLine();
+                string line = Ping.StandardOutput.ReadLine().Trim();
                 Console.WriteLine(line);
                 if (line.StartsWith("Request timed out.")
-                    || line.EndsWith("Destination host unreachable."))
+                    || line.EndsWith("Destination host unreachable.")
+                    || line.EndsWith("General failure."))
                 {
                     timeouts++;
                     latency += TIMEOUT_WAIT_MS;
@@ -112,7 +126,7 @@ namespace ConnectionPatcher
         }
         private void ResetConnection()
         {
-            Console.WriteLine("Resetting adapter.");
+            Console.WriteLine("Resetting adapter. ({0})", ++Resets);
             Adapter.Disable();
             Adapter.Enable();
             Console.WriteLine("Reconnecting to wi-fi network.");
